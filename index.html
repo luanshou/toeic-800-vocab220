@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -28,6 +28,7 @@ body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#1a1a2e;colo
 .card-back .back-label{font-size:11px;color:#e94560;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
 .card-back .back-def{font-size:18px;color:#eee;line-height:1.6}
 .card-back .back-sentence{font-size:14px;color:#aaa;line-height:1.7;font-style:italic}
+.card-back .back-sentence .highlight{color:#e94560;font-weight:bold;font-style:normal;background:rgba(233,69,96,.15);padding:1px 4px;border-radius:3px}
 .controls{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;justify-content:center}
 .btn{padding:10px 18px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:all .2s;color:#fff;user-select:none;-webkit-user-select:none}
 .btn:active{transform:scale(.96)}
@@ -148,6 +149,14 @@ function updateStats() {
   document.getElementById("progressFill").style.width = (k / t * 100).toFixed(1) + "%";
 }
 
+
+function highlightWordInSentence(word, sentence) {
+  var escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  var pattern = word.indexOf(' ') >= 0
+    ? new RegExp('(' + escaped + ')', 'gi')
+    : new RegExp('\\b(' + escaped + ')', 'gi');
+  return sentence.replace(pattern, '<span class="highlight">$1</span>');
+}
 function renderCard() {
   speechSynthesis.cancel();
   speaking = false;
@@ -156,19 +165,23 @@ function renderCard() {
   document.getElementById("cardNumber").textContent = w.no + " / " + WORDS.length;
   document.getElementById("cardWord").textContent = w.word;
   document.getElementById("cardDef").textContent = w.def;
-  document.getElementById("cardSentence").textContent = w.sentence;
+  document.getElementById("cardSentence").innerHTML = highlightWordInSentence(w.word, w.sentence);
   isFlipped = false;
   document.getElementById("card").classList.remove("flipped");
   state.currentIndex = currentIndex;
   saveState(state);
   updateStats();
-  // Auto play pronunciation
-  doSpeak(w.word);
+  // Auto speak only after user has interacted
+  if (audioUnlocked) doSpeak(w.word);
 }
 
 function flipCard() {
   isFlipped = !isFlipped;
   document.getElementById("card").classList.toggle("flipped");
+  if (isFlipped) {
+    var w = WORDS[currentOrder[currentIndex]];
+    doSpeak(w.sentence);
+  }
 }
 function nextCard() { if (currentIndex < currentOrder.length - 1) { currentIndex++; renderCard(); } }
 function prevCard() { if (currentIndex > 0) { currentIndex--; renderCard(); } }
@@ -211,15 +224,28 @@ document.addEventListener("touchend", function(e) {
   if (Math.abs(diff) > 60) { if (diff < 0) nextCard(); else prevCard(); }
 });
 
-// Preload voice cache, then render first card
+// Render card immediately (don't wait for voice - mobile onvoiceschanged may never fire)
+renderCard();
+
+// Preload voice in background for future speak button taps
+var audioUnlocked = false;
 if ("speechSynthesis" in window) {
   speechSynthesis.getVoices();
-  // Some browsers need a user gesture first for speech
-  getEnglishVoice().then(function() {
-    renderCard();
-  });
-} else {
-  renderCard();
+  getEnglishVoice();
+  // Unlock audio on first touch (iOS requirement)
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    // Prime speech engine
+    var d = new SpeechSynthesisUtterance("");
+    d.volume = 0;
+    speechSynthesis.speak(d);
+    speechSynthesis.cancel();
+    document.removeEventListener("touchstart", unlockAudio);
+    document.removeEventListener("click", unlockAudio);
+  }
+  document.addEventListener("touchstart", unlockAudio);
+  document.addEventListener("click", unlockAudio);
 }
 </script>
 </body>
